@@ -1,0 +1,323 @@
+import re
+from bs4 import BeautifulSoup
+def delblankline(code):
+    s1 = code.split("\n")
+    line = [i for i in s1 if i.strip() != ""]
+    code = "\n".join(line)
+    return code
+def ionicfilter(code):
+    code=code.replace("});","},")
+    code=code.replace(");","")
+    appname=getappname(code)
+    pattern = r".*\s*=\s*new\s*Framework7\s*\(\s*\)\s*;"
+    code = re.sub(pattern, "",code)
+    pattern2 = r".*=\s*Dom7\s*;"
+    code = re.sub(pattern2, "",code)
+    code = code.replace("<script>","<script>\nexport default {\nmethods: {")
+    code = code.replace("</script>", "}\n}\n</script>")
+    soup=BeautifulSoup(code,"html.parser")
+    docs=soup.find_all(attrs={'class':'page-content'})
+    if docs:
+        for d in docs:
+            d.name="IonVuePage"
+            del d['class']
+            nav=soup.find(attrs={'class':'navbar'})
+            if nav:
+                d.attrs['title']=nav.get_text()
+    docs = soup.find_all(attrs={'class': 'content-block'})
+    if docs:
+        for d in docs:
+            rem=d.unwrap()
+    docs = soup.find_all(attrs={'class': 'button'})
+    if docs:
+        for d in docs:
+            d.name="ion-button"
+    docs = soup.find_all(attrs={'class':'badge'})
+    if docs:
+        for d in docs:
+            d.name="ion-badge"
+            cls=d.attrs['class']
+            cls.remove("badge")
+            for i in cls:
+                if i.find("color-")>-1:
+                    d.attrs['color']=colortrans(i)
+                    cls.remove(i)
+            del d['class']
+    code=str(soup)
+    code=delblankline(code)
+    code=re.sub("</script>.*","</script>",code,re.DOTALL | re.MULTILINE)
+    return code
+def getappname(code):
+    pattern = r".*?\s*=\s*new\s*Framework7"
+    appname="myApp"
+    m = re.search(pattern, code)
+    if m:
+        m = m.group()
+        m = re.sub("=\s*new\s*Framework7", "", m)
+        appname = m.replace("var ", "").strip()
+    return appname
+
+def colortrans(color):
+    color=color.replace("color-","").replace("bg-","bg")
+    old="gray white black lightblue yellow orange pink blue green red".split(" ")
+    newcol="medium light dark secondary warning-tint warning danger-tint primary success danger".split(" ")
+    color=color.strip()
+    i=-1
+    if color in old:
+        i=old.index(color)
+    if i>-1:
+        color=newcol[i]
+    return color
+
+def alert(code):
+    appname=getappname(code)
+    if code.find(appname+".alert(")>-1:
+        m=re.findall(appname+".alert\(.*\)",code)
+        if m:
+            for i in m:
+                num=i.count("'")
+                if num==2:
+                    text=re.findall(appname+".alert\('(.*)'\)",i)
+                    if text:
+                        message=("").join(text)
+                        s1="return this.$ionic.alertController\n"+".create({\n"+" message: '"+message+"',\n buttons: ['OK'],\n})\n.then(a => a.present())"
+                        code=code.replace(i,s1)
+                    elif not text and i.find("function")>-1:
+                        text = re.findall(appname + ".alert\(*'(.*)'", i)
+                        if text:
+                            s1 = code.split("\n")
+                            for j in s1:
+                                if j.find(i) > -1:
+                                    ind = s1.index(j)
+                            functext = ""
+
+                            str1 = s1[ind]
+                            s1[ind] = str1.replace("function", "").replace("()", "")
+                            opener = str1.count("{")
+                            if opener > 0:
+                                s1[ind] = str1.replace("{", "")
+                            closer = str1.count("}")
+                            if closer > 0:
+                                s1[ind] = str1.replace("}", "")
+                            ind = ind + 1
+                            while ind < len(s1):
+                                str1 = s1[ind]
+                                opener = opener + str1.count("{")
+                                if str1.count("{") > 0:
+                                    s1[ind] = str1.replace("{", "")
+                                closer = closer + str1.count("}")
+                                if str1.count("}") > 0:
+                                    s1[ind] = str1.replace("}", "")
+                                if opener > 0 and opener == closer:
+                                    break
+                                else:
+                                    functext = functext + "\n" + str1
+                                    s1[ind] = ""
+                                ind = ind + 1
+                            code = "\n".join(s1)
+
+                            message=("").join(text)
+                            s1 = "return this.$ionic.alertController\n" + ".create({\n" + "message: '" + message + "',\n buttons: [\n{\ntext: 'OK',\nhandler: () => {\n" +functext+ "\n},\n},\n],\n})\n.then(a => a.present())"
+                            code = code.replace(i, s1)
+                elif num>2:
+                    text = re.findall(appname + ".alert\('(.*)'\)", i)
+                    if text:
+                        message = text[0].split(",")[0]
+                        header = text[0].split(",")[1]
+                        s1 = "return this.$ionic.alertController\n" + ".create({\n" + "header: '"+header+"',\nmessage: '" + message + "',\n buttons: ['OK'],\n})\n.then(a => a.present())"
+                        code = code.replace(i, s1)
+                    elif not text and i.find("function")>-1:
+                        text = re.findall(appname + ".alert\(*'(.*)'", i)
+                        if text:
+                            s1=code.split("\n")
+                            for j in s1:
+                                if j.find(i)>-1:
+                                    ind=s1.index(j)
+                            functext=""
+
+                            str1 = s1[ind]
+                            s1[ind]=str1.replace("function","").replace("()","")
+                            opener=str1.count("{")
+                            if opener>0:
+                                s1[ind]=str1.replace("{","")
+                            closer=str1.count("}")
+                            if closer>0:
+                                s1[ind]=str1.replace("}","")
+                            ind = ind + 1
+                            while ind<len(s1):
+                                str1=s1[ind]
+                                opener = opener + str1.count("{")
+                                if str1.count("{") > 0:
+                                    s1[ind] = str1.replace("{", "")
+                                closer = closer + str1.count("}")
+                                if str1.count("}") > 0:
+                                    s1[ind] = str1.replace("}", "")
+                                if opener>0 and opener==closer:
+                                    break
+                                else:
+                                    functext=functext+"\n"+str1
+                                    s1[ind]=""
+                                ind = ind+1
+                            code="\n".join(s1)
+                            message = text[0].split(",")[0].replace("'","")
+                            header = text[0].split(",")[1].replace("'","")
+                            s1 = "return this.$ionic.alertController\n" + ".create({\n" + "header: '" + header + "',\nmessage: '" + message + "',\n buttons: [\n{\ntext: 'OK',\nhandler: () => {\n" +functext+ "\n},\n},\n],\n})\n.then(a => a.present())"
+                            code = code.replace(i, s1)
+    return code
+
+def functioninit(code):
+    soup = BeautifulSoup(code, "html.parser")
+    l1=[]
+    pattern=r"\((.*)\).on.*\(.*'click',.*function"
+    n=re.findall(pattern,code)
+    if n:
+        for i in n:
+            l1.append(i)
+        num=0
+        for i in l1:
+            i=i.replace("\"","").replace("'","").strip()
+            num=num+1
+            if i[0]==".":
+                docs=soup.find_all(attrs={'class':i[1:]})
+                if docs:
+                    for d in docs:
+                        d.attrs['@click']="func"+str(num)
+                        d.name="ion-button"
+            elif i[0]=="#":
+                docs = soup.find_all(attrs={'id': i[1:]})
+                if docs:
+                    for d in docs:
+                        d.attrs['@click'] = "func" + str(num)
+    code = str(soup)
+    pattern = r"\(.*\).on.*\(.*'click',.*function\s*\(.*\)"
+    n = re.findall(pattern, code)
+    if n:
+        num=0
+        for i in n:
+            num=num+1
+            code=code.replace(i,"func"+str(num)+"()").replace("$$","")
+    return code
+
+def acttoionic(code):
+    find=0
+    textlist=[]
+    bglist=[]
+    bgfind=[]
+    colorlist=[]
+    colorfind=[]
+    labellist=[]
+    labelfind=[]
+    onclick=[]
+    onclickfind=[]
+    s1=code.split("\n")
+    s="text"
+    k=0
+    for i in s1:
+        if i.find("text")>-1 and i.find(":")>-1:
+            ind=s1.index(i)
+            textvalue=i.replace("text","").replace(":","").replace(",","").strip()
+            textlist.append(textvalue)
+            find=find+1
+        if i.find("label") > -1 and i.find(":") > -1:
+            label=i.replace("label","").replace(":","").replace(",","").strip()
+            labellist.append(label)
+            labelfind.append(find)
+        if i.find("color") > -1 and i.find(":") > -1:
+            color = i.replace("color", "").replace(":", "").replace(",", "").strip()
+            colorlist.append(color)
+            colorfind.append(find)
+        if i.find("bg") > -1 and i.find(":") > -1:
+            bg = i.replace("bg", "").replace(":", "").replace(",", "").strip()
+            bglist.append(bg)
+            bgfind.append(find)
+        if i.find("onClick")>-1 and i.find(":")>-1:
+            if k<len(s1):
+                if s1[k].find("{") or s1[k+1].find("{"):
+                    open=i.count("{")
+                    close=i.count("}")
+                    x=k
+                    clk=""
+                    while x<len(s1):
+                        open=open+s1[x].count("{")
+                        close=close+s1[x].count("}")
+                        if open==close:
+                            break
+                        clk=clk+"\n"+s1[x].strip()
+                        x=x+1
+                    clk=clk.replace("onClick","handler").replace("function ()","() => ").replace("function()","() => ")
+                    if clk[-1]==",":
+                        clk=clk[1:-1]
+                    else:
+                        clk=clk[1:]
+                    onclick.append(clk)
+                    onclickfind.append(find)
+        k = k + 1
+    i=0
+    j=0
+    k=0
+    m=0
+    result=""
+    n=0
+    if len(labelfind)>0:
+        firstlabel=labelfind[0]-1
+        result="return this.$ionic.actionSheetController\n .create({\n"+"header:"+textlist[firstlabel]+","+"\nbuttons: [\n"
+        while i<find:
+            if i+1 not in labelfind:
+                result = result + "{" + "\n"
+                result=result+"text: "+textlist[i]+",\n"
+                if i+1 in onclickfind:
+                    result=result+onclick[n]+"\n"
+                    n = n + 1
+                result=result+"},"+"\n"
+            i=i+1
+        result=result[:-2]+"\n]\n})\n.then(a => a.present())"
+    else:
+        result = "return this.$ionic.actionSheetController\n .create({\n" + "buttons: [\n"
+        while i < find:
+            result = result + "{" + "\n"
+            result = result + "text: " + textlist[i] + ",\n"
+            if i + 1 in onclickfind:
+                result = result + onclick[n] + "\n"
+                n = n + 1
+            result = result + "}," + "\n"
+            i = i + 1
+        result = result[:-2] + "\n]\n})\n.then(a => a.present())"
+    return result
+def actinit(code):
+    l1=[]
+    appname=getappname(code)
+    s1=code.split("\n")
+    i=0
+    ind=0
+    while i<len(s1):
+        if s1[i].find(appname+".actions(")>-1:
+            j=i
+            s=""
+            while j>0:
+                if s1[j].find("function")>-1 and s1[j].find("onClick")<0:
+                    l1.append(s)
+                    break
+                elif s1[j].find("func")>-1 and s1[j].find("onClick")<0:
+                    l1.append(s)
+                    break
+                else:
+                    s=s1[j]+"\n"+s
+                j=j-1
+        i=i+1
+    return l1
+path="C:/Users/Administrator/Desktop/f7tovue.txt"
+code_file = open(path, "r", encoding='utf-8')
+code = code_file.read()
+code_file.close()
+code=functioninit(code)
+code=alert(code)
+l1=actinit(code)
+for i in l1:
+    act = acttoionic(i)
+    code=code.replace(i[:-1],act)
+code=ionicfilter(code)
+print(code)
+
+
+#for i in textlist:
+#    print('text   :   ',i)
